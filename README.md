@@ -40,7 +40,7 @@ Descarga la última versión de **`VideoPoolDownloader.exe`** desde la sección 
 
 1. Clona este repositorio:
    ```bash
-   git clone https://github.com/TU_USUARIO/videopool-downloader.git
+   git clone https://github.com/giftofchalance/videopool-downloader.git
    cd videopool-downloader
    ```
 
