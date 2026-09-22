@@ -341,6 +341,17 @@ class VideoDownloaderApp(ctk.CTk):
         )
         self.btn_open_folder.pack(side="right")
 
+        # Switch para controlar si preguntar abrir carpeta al finalizar (desactivado por defecto)
+        self.ask_open_folder_var = ctk.BooleanVar(value=False)
+        self.switch_ask_open = ctk.CTkSwitch(
+            folder_frame,
+            text="Preguntar para abrir la carpeta al finalizar la descarga",
+            variable=self.ask_open_folder_var,
+            font=ctk.CTkFont(size=12),
+            progress_color="#0284c7",
+        )
+        self.switch_ask_open.pack(anchor="w", padx=15, pady=(0, 10))
+
         # --- BOTONES DE ACCIÓN PRINCIPALES ---
         action_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
         action_frame.pack(fill="x", pady=(10, 6), padx=2)
@@ -538,20 +549,24 @@ class VideoDownloaderApp(ctk.CTk):
             messagebox.showwarning("Atención", "Por favor ingresa al menos un enlace para descargar.")
             return
 
-        # Separar por líneas y espacios para extraer URLs
+        # Separar por líneas y permitir formato "URL | Nombre personalizado"
         raw_lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
-        urls = []
+        download_items = []
         for line in raw_lines:
-            # Dividir por espacios por si pegaron varios links en una sola linea
-            parts = line.split()
-            for part in parts:
-                cleaned = part.strip()
-                if cleaned.startswith("http://") or cleaned.startswith("https://") or "youtu" in cleaned or "tiktok" in cleaned or "instagram" in cleaned:
-                    urls.append(cleaned)
-                elif cleaned:
-                    urls.append(cleaned)
+            if "|" in line:
+                parts = line.split("|", 1)
+                u = parts[0].strip()
+                n = parts[1].strip()
+                if u:
+                    download_items.append((u, n))
+            else:
+                parts = line.split()
+                for part in parts:
+                    cleaned = part.strip()
+                    if cleaned:
+                        download_items.append((cleaned, ""))
 
-        if not urls:
+        if not download_items:
             messagebox.showwarning("Atención", "No se detectaron enlaces válidos en el texto ingresado.")
             return
 
@@ -584,7 +599,7 @@ class VideoDownloaderApp(ctk.CTk):
         # Lanzar hilo en background
         self.worker_thread = threading.Thread(
             target=self._download_worker,
-            args=(urls, selected_format_label, embed_meta, fast_dl, use_trim, start_time, end_time, custom_name),
+            args=(download_items, selected_format_label, embed_meta, fast_dl, use_trim, start_time, end_time, custom_name),
             daemon=True,
         )
         self.worker_thread.start()
@@ -606,8 +621,8 @@ class VideoDownloaderApp(ctk.CTk):
             except Exception as e:
                 self._log_console(f"Error al detener proceso: {e}")
 
-    def _download_worker(self, urls, selected_format, embed_meta, fast_dl, use_trim, start_time, end_time, custom_name=""):
-        total_urls = len(urls)
+    def _download_worker(self, download_items, selected_format, embed_meta, fast_dl, use_trim, start_time, end_time, custom_name=""):
+        total_urls = len(download_items)
         success_count = 0
         error_count = 0
 
@@ -617,7 +632,7 @@ class VideoDownloaderApp(ctk.CTk):
         # Expresión regular para porcentaje de yt-dlp
         pct_regex = re.compile(r"\[download\]\s+(\d+(?:\.\d+)?)%")
 
-        for idx, url in enumerate(urls, start=1):
+        for idx, (url, line_specific_name) in enumerate(download_items, start=1):
             if self.cancel_requested:
                 self._log_console("Descarga de lote cancelada.")
                 break
@@ -625,19 +640,22 @@ class VideoDownloaderApp(ctk.CTk):
             self._set_status(f"Descargando ({idx}/{total_urls}): {url[:45]}...", color="#38bdf8", pct=(idx - 1) / total_urls)
             self._log_console(f"[{idx}/{total_urls}] Procesando: {url}")
 
-            # Construcción de plantilla de salida
-            if custom_name:
-                # Sanitizar caracteres no permitidos en nombres de archivo
-                safe_name = re.sub(r'[<>:"/\\|?*]', '_', custom_name)
-                # Remover extensión si el usuario la escribió manualmente
+            # Determinar nombre del archivo
+            target_name = line_specific_name if line_specific_name else custom_name
+            if target_name:
+                # Sanitizar caracteres no permitidos en Windows
+                safe_name = re.sub(r'[<>:"/\\|?*]', '_', target_name)
                 for ext in [".mp4", ".mp3", ".wav", ".webm", ".mkv"]:
                     if safe_name.lower().endswith(ext):
                         safe_name = safe_name[:-len(ext)]
                         break
-                # Si hay más de un enlace, enumerar (ej. mi_clip_1, mi_clip_2)
-                file_stem = f"{safe_name}_{idx}" if total_urls > 1 else safe_name
+                # Si viene del campo global y hay múltiples enlaces sin nombre específico, enumerar
+                if not line_specific_name and total_urls > 1:
+                    file_stem = f"{safe_name}_{idx}"
+                else:
+                    file_stem = safe_name
                 out_template = os.path.join(self.output_dir, f"{file_stem}.%(ext)s").replace("\\", "/")
-                self._log_console(f"Guardando como: {file_stem}")
+                self._log_console(f"Nombre de archivo asignado: {file_stem}")
             else:
                 suffix = "_clip" if use_trim else ""
                 out_template = os.path.join(self.output_dir, f"%(title).120B{suffix} [%(id)s].%(ext)s").replace("\\", "/")
@@ -766,9 +784,10 @@ class VideoDownloaderApp(ctk.CTk):
             elif error_count == 0 and success_count > 0:
                 self._set_status(f"¡Completado! {success_count} archivo(s) guardados con éxito.", color="#10b981", pct=1.0)
                 self._log_console(f"=== Proceso finalizado con éxito ({success_count}/{total_urls}) ===")
-                # Preguntar si desea abrir la carpeta
-                if messagebox.askyesno("Descarga completada", f"Se descargaron {success_count} archivo(s) con éxito.\n¿Deseas abrir la carpeta de descargas?"):
-                    self._open_output_folder()
+                # Preguntar si desea abrir la carpeta solo si el switch está activado
+                if self.ask_open_folder_var.get():
+                    if messagebox.askyesno("Descarga completada", f"Se descargaron {success_count} archivo(s) con éxito.\n¿Deseas abrir la carpeta de descargas?"):
+                        self._open_output_folder()
             elif success_count > 0 and error_count > 0:
                 self._set_status(f"Completado con errores: {success_count} OK, {error_count} fallidos.", color="#f59e0b", pct=1.0)
                 messagebox.showwarning("Finalizado con advertencias", f"Se descargaron {success_count} enlaces pero fallaron {error_count}.\nRevisa la consola para más detalles.")
