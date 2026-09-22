@@ -17,6 +17,7 @@
 - ✂️ **Modo Recorte de Clips**: Especifica tiempo de inicio y fin (`HH:MM:SS`, `MM:SS` o segundos) para descargar únicamente el fragmento deseado.
 - 🖼️ **Carátulas y Metadatos**: Opción para incrustar la miniatura como portada y añadir tags ID3/metadatos al archivo.
 - ⚡ **Acelerador Multihilo (`-N 4`)**: Descarga fragmentos DASH/HLS en paralelo para maximizar la velocidad en archivos grandes.
+- 🏷️ **Renombrar Archivo Personalizado**: Campo opcional para nombrar el archivo antes de descargarlo. Si descargas múltiples enlaces a la vez, los numera automáticamente (ej: `clip_1.mp4`, `clip_2.mp4`).
 - 📁 **Carpeta Dinámica**: Guarda automáticamente en `Documentos/VIDEOPOOL/CLIPS` del usuario actual, con botón para abrirla directamente en el Explorador de Windows.
 - 🔄 **Procesamiento Asíncrono**: La interfaz nunca se congela; incluye barra de progreso, porcentaje en vivo, consola de actividad y botón para cancelar.
 

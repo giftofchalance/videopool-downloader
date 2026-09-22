@@ -230,6 +230,24 @@ class VideoDownloaderApp(ctk.CTk):
         )
         self.chk_fast_dl.pack(side="left")
 
+        # Campo para nombre de archivo personalizado (Renombrar antes de descargar)
+        name_row = ctk.CTkFrame(opts_frame, fg_color="transparent")
+        name_row.pack(fill="x", padx=15, pady=(4, 10))
+
+        lbl_name = ctk.CTkLabel(
+            name_row,
+            text="🏷️ Renombrar video/audio:",
+            font=ctk.CTkFont(size=13, weight="bold"),
+        )
+        lbl_name.pack(side="left", padx=(0, 10))
+
+        self.entry_custom_name = ctk.CTkEntry(
+            name_row,
+            placeholder_text="Nombre personalizado (opcional: dejar vacío para título original)",
+            font=ctk.CTkFont(size=12),
+        )
+        self.entry_custom_name.pack(side="left", fill="x", expand=True)
+
         # Opciones de recorte
         trim_card = ctk.CTkFrame(opts_frame, corner_radius=8, fg_color="#18181b")
         trim_card.pack(fill="x", padx=15, pady=(0, 12))
@@ -450,7 +468,8 @@ class VideoDownloaderApp(ctk.CTk):
 
     def _clear_links(self):
         self.txt_links.delete("1.0", "end")
-        self._log_console("Lista de enlaces limpiada.")
+        self.entry_custom_name.delete(0, "end")
+        self._log_console("Lista de enlaces y nombre personalizado limpiados.")
 
     def _clear_console(self):
         self.txt_console.configure(state="normal")
@@ -560,11 +579,12 @@ class VideoDownloaderApp(ctk.CTk):
         selected_format_label = self.seg_format.get()
         embed_meta = self.embed_meta_var.get()
         fast_dl = self.fast_dl_var.get()
+        custom_name = self.entry_custom_name.get().strip()
 
         # Lanzar hilo en background
         self.worker_thread = threading.Thread(
             target=self._download_worker,
-            args=(urls, selected_format_label, embed_meta, fast_dl, use_trim, start_time, end_time),
+            args=(urls, selected_format_label, embed_meta, fast_dl, use_trim, start_time, end_time, custom_name),
             daemon=True,
         )
         self.worker_thread.start()
@@ -586,7 +606,7 @@ class VideoDownloaderApp(ctk.CTk):
             except Exception as e:
                 self._log_console(f"Error al detener proceso: {e}")
 
-    def _download_worker(self, urls, selected_format, embed_meta, fast_dl, use_trim, start_time, end_time):
+    def _download_worker(self, urls, selected_format, embed_meta, fast_dl, use_trim, start_time, end_time, custom_name=""):
         total_urls = len(urls)
         success_count = 0
         error_count = 0
@@ -605,9 +625,22 @@ class VideoDownloaderApp(ctk.CTk):
             self._set_status(f"Descargando ({idx}/{total_urls}): {url[:45]}...", color="#38bdf8", pct=(idx - 1) / total_urls)
             self._log_console(f"[{idx}/{total_urls}] Procesando: {url}")
 
-            # Construcción de comando yt-dlp
-            suffix = "_clip" if use_trim else ""
-            out_template = os.path.join(self.output_dir, f"%(title).120B{suffix} [%(id)s].%(ext)s").replace("\\", "/")
+            # Construcción de plantilla de salida
+            if custom_name:
+                # Sanitizar caracteres no permitidos en nombres de archivo
+                safe_name = re.sub(r'[<>:"/\\|?*]', '_', custom_name)
+                # Remover extensión si el usuario la escribió manualmente
+                for ext in [".mp4", ".mp3", ".wav", ".webm", ".mkv"]:
+                    if safe_name.lower().endswith(ext):
+                        safe_name = safe_name[:-len(ext)]
+                        break
+                # Si hay más de un enlace, enumerar (ej. mi_clip_1, mi_clip_2)
+                file_stem = f"{safe_name}_{idx}" if total_urls > 1 else safe_name
+                out_template = os.path.join(self.output_dir, f"{file_stem}.%(ext)s").replace("\\", "/")
+                self._log_console(f"Guardando como: {file_stem}")
+            else:
+                suffix = "_clip" if use_trim else ""
+                out_template = os.path.join(self.output_dir, f"%(title).120B{suffix} [%(id)s].%(ext)s").replace("\\", "/")
 
             cmd = [
                 "yt-dlp",
